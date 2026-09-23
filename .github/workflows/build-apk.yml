@@ -5,8 +5,9 @@ name: Build & Release APK
 # on GitHub's unlimited free Actions minutes for public repos, instead of
 # eating into the private hamidxvt/Bookmark-app repo's metered quota. The
 # actual source code lives in Bookmark-app and is checked out fresh each
-# run via SOURCE_REPO_TOKEN (a fine-grained PAT scoped to read-only
-# access on that one repo) — nothing from it is committed here.
+# run via SOURCE_REPO_TOKEN (also used read-only below, to look up that
+# repo's release history for versionCode continuity) — nothing from it
+# is committed here.
 on:
   workflow_dispatch:
 
@@ -62,19 +63,32 @@ jobs:
           storeFile=bookmark-release.jks
           EOF
 
-      # Bump the Android versionCode using this repo's own run number
-      # before building, so every release gets a strictly increasing
-      # code without hand-editing pubspec.yaml in the source repo.
-      - name: Bump versionCode
+      # Bump the Android versionCode before building. NOT just this repo's
+      # own GITHUB_RUN_NUMBER — this is a fresh repo, so that starts back
+      # at 1, which is BELOW every versionCode the old (private-repo)
+      # pipeline already shipped and officers may already have installed.
+      # Android refuses to install a lower versionCode as an "update"
+      # over an existing install, and our own backend's updateAvailable
+      # check (latest > current) would never fire either. Instead,
+      # continue the sequence from whichever pipeline last shipped
+      # highest, across BOTH repos.
+      - name: Determine next versionCode
         id: bump
         working-directory: source/mobile
         run: |
           SEMVER=$(grep "^version:" pubspec.yaml | head -1 | awk '{print $2}' | cut -d'+' -f1)
-          NEW_BUILD=${GITHUB_RUN_NUMBER}
+
+          OLD_LATEST=$(GH_TOKEN="${{ secrets.SOURCE_REPO_TOKEN }}" gh release list --repo hamidxvt/Bookmark-app --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null | grep -oE '[0-9]+$' || true)
+          NEW_LATEST=$(GH_TOKEN="${{ secrets.GITHUB_TOKEN }}" gh release list --repo hamidxvt/railway-app-build --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null | grep -oE '[0-9]+$' || true)
+          OLD_LATEST=${OLD_LATEST:-0}
+          NEW_LATEST=${NEW_LATEST:-0}
+          BASE=$(( OLD_LATEST > NEW_LATEST ? OLD_LATEST : NEW_LATEST ))
+          NEW_BUILD=$(( BASE + 1 ))
+
           sed -i "s/^version: .*/version: ${SEMVER}+${NEW_BUILD}/" pubspec.yaml
           echo "version=${SEMVER}" >> $GITHUB_OUTPUT
           echo "build=${NEW_BUILD}" >> $GITHUB_OUTPUT
-          echo "Bumped pubspec to ${SEMVER}+${NEW_BUILD}"
+          echo "Old repo latest=${OLD_LATEST}, new repo latest=${NEW_LATEST} -> bumped pubspec to ${SEMVER}+${NEW_BUILD}"
 
       - name: Build APK
         working-directory: source/mobile
