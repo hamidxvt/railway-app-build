@@ -98,12 +98,16 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: source/mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          path: |
+            source/mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            source/mobile/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: source/mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          files: |
+            source/mobile/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            source/mobile/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
           # Tag encodes semver AND build number so the backend's
           # fetchLatestGitHubRelease can derive the exact versionCode by
           # splitting the tag on '+' — same convention as the old
